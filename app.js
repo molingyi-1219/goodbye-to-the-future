@@ -134,7 +134,11 @@ async function registerWithPassword() {
   const input = credentials(); if (!input) return;
   const { data, error } = await db.auth.signUp({ email: input.email, password: input.password, options:{ data:{ username:input.username } } });
   if (error) return notice(`注册失败：${error.message}`);
-  notice(data.session ? '账号已创建并登录。' : '账号已创建，请到邮箱确认后再登录。');
+  notice(data.session ? '账号已创建并登录。' : '账号已创建，请直接用账号和密码登录。');
+}
+async function signInGuest() {
+  const { error } = await db.auth.signInAnonymously();
+  notice(error ? `访客登录失败：${error.message}` : '已作为访客进入。请不要清除浏览器数据，否则无法找回这块碑。');
 }
 async function initAuth() {
   const { data } = await db.auth.getSession(); user = data.session?.user || null;
@@ -148,7 +152,7 @@ function addStyleOptions() {
   });
 }
 function wireUI() {
-  $('guest').onclick = () => { $('gate').hidden = true; };
+  $('guest').onclick = signInGuest;
   $('emailLogin').onclick = signInWithPassword; $('emailRegister').onclick = registerWithPassword;
   $('loginBtn').onclick = async () => { if (user) await db.auth.signOut(); else showGate(); };
   document.querySelectorAll('#createBtn,#heroCreate').forEach(button => button.onclick = () => { if (requireLogin()) $('createDialog').showModal(); });
