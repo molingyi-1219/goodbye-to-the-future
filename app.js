@@ -18,6 +18,7 @@ function notice(message) { $('authNotice').textContent = message; }
 function updateUserUI() {
   $('userLabel').textContent = user?.user_metadata?.username || (user ? '已登录' : '访客');
   $('loginBtn').textContent = user ? '退出登录' : '登录';
+  $('myBtn').hidden = !user;
 }
 function showGate(message) { $('gate').hidden = false; notice(message || '登录后才能立碑、献花或留言。'); }
 function requireLogin() { if (!user) { showGate('请先登录，才能进行这项操作。'); return false; } return true; }
@@ -55,6 +56,26 @@ function render() {
   document.querySelectorAll('.card-open').forEach(button => button.onclick = () => openDetail(button.dataset.id));
 }
 function itemFor(id) { return memorials.find(item => item.id === id); }
+function renderMyMemorials() {
+  const mine = memorials.filter(item => item.owner === user?.id);
+  $('myList').innerHTML = mine.length ? mine.map(item => `<article class="comment"><b>${escapeHTML(item.title)}</b><small>· ${item.public ? '公开展示' : '已隐藏'}</small><br><span class="private-note">${escapeHTML(item.kind)} · ${dateText(item.created_at)}</span><div class="actions"><button class="outline" data-toggle="${item.id}">${item.public ? '设为隐藏' : '公开展示'}</button><button class="outline" data-delete="${item.id}">删除</button></div></article>`).join('') : '<p class="private-note">你还没有立下任何碑。</p>';
+  document.querySelectorAll('[data-toggle]').forEach(button => button.onclick = () => toggleVisibility(button.dataset.toggle));
+  document.querySelectorAll('[data-delete]').forEach(button => button.onclick = () => deleteMemorial(button.dataset.delete));
+}
+function openMyMemorials() { if (!requireLogin()) return; renderMyMemorials(); $('myDialog').showModal(); }
+async function toggleVisibility(id) {
+  const item = itemFor(id); if (!item || item.owner !== user?.id) return;
+  const { error } = await db.from('memorials').update({ visibility:item.public ? 'private' : 'public' }).eq('id', id).eq('owner_id', user.id);
+  if (error) return alert(`状态未更新：${error.message}`);
+  await loadMemorials(); renderMyMemorials();
+}
+async function deleteMemorial(id) {
+  const item = itemFor(id); if (!item || item.owner !== user?.id) return;
+  if (!confirm(`确定删除“${item.title}”吗？这会同时删除它的花、留言和回访记录。`)) return;
+  const { error } = await db.from('memorials').delete().eq('id', id).eq('owner_id', user.id);
+  if (error) return alert(`删除失败：${error.message}`);
+  await loadMemorials(); renderMyMemorials();
+}
 
 function openDetail(id) {
   const item = itemFor(id); if (!item) return;
@@ -154,6 +175,7 @@ function addStyleOptions() {
 function wireUI() {
   $('guest').onclick = signInGuest;
   $('emailLogin').onclick = signInWithPassword; $('emailRegister').onclick = registerWithPassword;
+  $('myBtn').onclick = openMyMemorials; $('closeMy').onclick = () => close('myDialog');
   $('loginBtn').onclick = async () => { if (user) await db.auth.signOut(); else showGate(); };
   document.querySelectorAll('#createBtn,#heroCreate').forEach(button => button.onclick = () => { if (requireLogin()) $('createDialog').showModal(); });
   document.querySelectorAll('[data-close="createDialog"]').forEach(button => button.onclick = () => close('createDialog'));
@@ -164,3 +186,4 @@ function wireUI() {
   document.body.insertAdjacentHTML('beforeend', `<dialog id="tendDialog"><form class="modal form" id="tendForm"><div class="modal-top wide"><h2>回来扫墓</h2><button type="button" class="close" id="closeTend">×</button></div><p class="private-note wide">留下一段回访记录：可以是近况、思念，或一句新的话。</p><label class="wide">今天想留下什么？<textarea required name="body" maxlength="800" placeholder="我又来看你了。"></textarea></label><label class="check wide"><input type="checkbox" name="public" checked>让访客看见这段回访</label><div class="actions wide"><button type="button" class="outline" id="cancelTend">取消</button><button class="primary">留下回访记录</button></div></form></dialog>`);
 }
 addStyleOptions(); wireUI(); initAuth().then(loadMemorials);
+
