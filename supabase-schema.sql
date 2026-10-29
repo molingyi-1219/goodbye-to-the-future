@@ -9,7 +9,7 @@ create table public.memorials (
   title text not null check (char_length(title) between 1 and 48),
   epitaph text check (char_length(epitaph) <= 100),
   story text check (char_length(story) <= 2000),
-  style text not null check (style in ('cross', 'arch', 'weathered')),
+  style text not null check (style in ('cross', 'arch', 'weathered', 'obelisk', 'abstract', 'deco')),
   visibility public.memorial_visibility not null default 'private',
   image_path text,
   created_at timestamptz not null default now(),
@@ -29,7 +29,7 @@ create table public.comments (
   author_id uuid not null references auth.users(id) on delete cascade,
   body text not null check (char_length(body) between 1 and 180),
   is_anonymous boolean not null default true,
-  status public.comment_status not null default 'pending',
+  status public.comment_status not null default 'published',
   created_at timestamptz not null default now()
 );
 
@@ -65,11 +65,11 @@ create policy "users add own flowers" on public.flowers for insert to authentica
   with check (user_id = auth.uid() and exists (select 1 from public.memorials m where m.id = memorial_id and m.visibility = 'public'));
 create policy "users remove own flowers" on public.flowers for delete to authenticated using (user_id = auth.uid());
 
--- Comments are submitted pending moderation. Only published comments are public.
+-- Comments publish immediately. Add a moderation dashboard before opening a large public community.
 create policy "read published or own comments" on public.comments for select
   using (status = 'published' or author_id = auth.uid());
 create policy "users submit comments" on public.comments for insert to authenticated
-  with check (author_id = auth.uid() and status = 'pending' and exists (select 1 from public.memorials m where m.id = memorial_id and m.visibility = 'public'));
+  with check (author_id = auth.uid() and status = 'published' and exists (select 1 from public.memorials m where m.id = memorial_id and m.visibility = 'public'));
 
 -- Only a memorial's creator can add a tending visit. Visitors can see public visits on public memorials.
 create policy "read public or own tending visits" on public.memorial_visits for select
@@ -85,4 +85,9 @@ create policy "owners upload into own folder" on storage.objects for insert to a
 create policy "owners manage own images" on storage.objects for all to authenticated
   using (bucket_id = 'memorial-media' and owner_id = auth.uid())
   with check (bucket_id = 'memorial-media' and owner_id = auth.uid());
+create policy "read images belonging to public memorials" on storage.objects for select
+  using (bucket_id = 'memorial-media' and exists (
+    select 1 from public.memorials m
+    where m.image_path = name and m.visibility = 'public'
+  ));
 
