@@ -110,10 +110,10 @@ function openTend(id) {
   $('tendDialog').showModal();
   $('closeTend').onclick = $('cancelTend').onclick = () => close('tendDialog');
   $('tendForm').onsubmit = async event => {
-    event.preventDefault(); const data = new FormData(event.currentTarget); const body = data.get('body').trim(); if (!body) return;
+    event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const body = data.get('body').trim(); if (!body) return;
     const { error } = await db.from('memorial_visits').insert({ memorial_id:id, author_id:user.id, body, is_public:data.get('public') === 'on' });
     if (error) return alert(`回访未保存：${error.message}`);
-    event.currentTarget.reset(); close('tendDialog'); await loadMemorials(); openDetail(id);
+    form.reset(); close('tendDialog'); await loadMemorials(); openDetail(id);
   };
 }
 async function uploadImage(file) {
@@ -127,12 +127,12 @@ async function uploadImage(file) {
 }
 async function createMemorial(event) {
   event.preventDefault(); if (!requireLogin()) return;
-  const data = new FormData(event.currentTarget); const button = event.currentTarget.querySelector('.primary'); button.disabled = true;
+  const form = event.currentTarget; const data = new FormData(form); const button = form.querySelector('.primary'); button.disabled = true;
   try {
     const image_path = await uploadImage(imageFile);
     const { error } = await db.from('memorials').insert({ owner_id:user.id, title:data.get('title').trim(), kind:data.get('kind'), epitaph:data.get('epitaph').trim(), story:data.get('story').trim(), style:data.get('style'), visibility:data.has('public') ? 'public' : 'private', image_path });
     if (error) throw error;
-    imageFile = null; event.currentTarget.reset(); close('createDialog'); await loadMemorials();
+    imageFile = null; form.reset(); close('createDialog'); await loadMemorials();
   } catch (error) { alert(`这块碑没有保存：${error.message}`); }
   finally { button.disabled = false; }
 }
