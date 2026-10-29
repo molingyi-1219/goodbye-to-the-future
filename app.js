@@ -4,7 +4,7 @@ const db = window.supabase?.createClient(config.url, config.publishableKey, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 const STYLES = {
-  cross: 'cross-gravestone-black.png', arch: 'arched-gravestone.png', weathered: 'broken-column.png',
+  cross: 'cross-gravestone.png', arch: 'arched-gravestone.png', weathered: 'broken-column.png',
   obelisk: 'gothic-obelisk.png', abstract: 'abstract-monolith.png', deco: 'art-deco-fan.png'
 };
 let user = null, filter = 'all', memorials = [], imageFile = null;
@@ -51,7 +51,7 @@ async function loadMemorials() {
 }
 function render() {
   const list = memorials.filter(item => item.public && (filter === 'all' || item.kind === filter));
-  $('grid').innerHTML = list.length ? list.map(item => `<article class="stone" style="background-image:linear-gradient(180deg,transparent 25%,#050505e8 74%),url('${styleURL(item)}')"><span class="badge">${escapeHTML(item.kind)}</span><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.epitaph || '尚未留下墓志铭。')}</p><div class="meta"><span>✿ ${item.flowers.length} 束花</span><span>查看碑文 →</span></div><button class="card-open" data-id="${item.id}" aria-label="查看 ${escapeHTML(item.title)}"></button></article>`).join('') : '<div class="empty">还没有公开的碑。成为第一个留下纪念的人。</div>';
+  $('grid').innerHTML = list.length ? list.map(item => `<article class="stone" style="background-color:#000;background-image:linear-gradient(#000b,#000c),linear-gradient(180deg,transparent 25%,#000 74%),url('${styleURL(item)}')"><span class="badge">${escapeHTML(item.kind)}</span><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.epitaph || '尚未留下墓志铭。')}</p><div class="meta"><span>✿ ${item.flowers.length} 束花</span><span>查看碑文 →</span></div><button class="card-open" data-id="${item.id}" aria-label="查看 ${escapeHTML(item.title)}"></button></article>`).join('') : '<div class="empty">还没有公开的碑。成为第一个留下纪念的人。</div>';
   document.querySelectorAll('.card-open').forEach(button => button.onclick = () => openDetail(button.dataset.id));
 }
 function itemFor(id) { return memorials.find(item => item.id === id); }
@@ -164,4 +164,3 @@ function wireUI() {
   document.body.insertAdjacentHTML('beforeend', `<dialog id="tendDialog"><form class="modal form" id="tendForm"><div class="modal-top wide"><h2>回来扫墓</h2><button type="button" class="close" id="closeTend">×</button></div><p class="private-note wide">留下一段回访记录：可以是近况、思念，或一句新的话。</p><label class="wide">今天想留下什么？<textarea required name="body" maxlength="800" placeholder="我又来看你了。"></textarea></label><label class="check wide"><input type="checkbox" name="public" checked>让访客看见这段回访</label><div class="actions wide"><button type="button" class="outline" id="cancelTend">取消</button><button class="primary">留下回访记录</button></div></form></dialog>`);
 }
 addStyleOptions(); wireUI(); initAuth().then(loadMemorials);
-
