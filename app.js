@@ -115,10 +115,23 @@ async function createMemorial(event) {
   } catch (error) { alert(`这块碑没有保存：${error.message}`); }
   finally { button.disabled = false; }
 }
-async function sendMagicLink() {
-  const email = $('email').value.trim(); if (!email || !email.includes('@')) return notice('请输入有效的邮箱地址。');
-  const { error } = await db.auth.signInWithOtp({ email, options:{ emailRedirectTo:siteURL() } });
-  notice(error ? `登录邮件未发出：${error.message}` : '登录链接已发到邮箱，请打开链接后回到这里。');
+function credentials() {
+  const email = $('email').value.trim();
+  const password = $('password').value;
+  if (!email || !email.includes('@')) { notice('请输入有效的邮箱地址。'); return null; }
+  if (password.length < 6) { notice('密码至少需要 6 位。'); return null; }
+  return { email, password };
+}
+async function signInWithPassword() {
+  const input = credentials(); if (!input) return;
+  const { error } = await db.auth.signInWithPassword(input);
+  notice(error ? `登录失败：${error.message}` : '登录成功。');
+}
+async function registerWithPassword() {
+  const input = credentials(); if (!input) return;
+  const { data, error } = await db.auth.signUp({ ...input, options:{ emailRedirectTo:siteURL() } });
+  if (error) return notice(`注册失败：${error.message}`);
+  notice(data.session ? '账号已创建并登录。' : '账号已创建，请到邮箱确认后再登录。');
 }
 async function signInGitHub() {
   const { error } = await db.auth.signInWithOAuth({ provider:'github', options:{ redirectTo:siteURL() } });
@@ -137,7 +150,7 @@ function addStyleOptions() {
 }
 function wireUI() {
   $('guest').onclick = () => { $('gate').hidden = true; };
-  $('emailLogin').onclick = sendMagicLink; $('githubLogin').onclick = signInGitHub;
+  $('emailLogin').onclick = signInWithPassword; $('emailRegister').onclick = registerWithPassword; $('githubLogin').onclick = signInGitHub;
   $('loginBtn').onclick = async () => { if (user) await db.auth.signOut(); else showGate(); };
   document.querySelectorAll('#createBtn,#heroCreate').forEach(button => button.onclick = () => { if (requireLogin()) $('createDialog').showModal(); });
   document.querySelectorAll('[data-close="createDialog"]').forEach(button => button.onclick = () => close('createDialog'));
