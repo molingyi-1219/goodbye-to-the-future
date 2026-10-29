@@ -16,7 +16,7 @@ const siteURL = () => `${location.origin}${location.pathname}`;
 
 function notice(message) { $('authNotice').textContent = message; }
 function updateUserUI() {
-  $('userLabel').textContent = user?.email || '访客';
+  $('userLabel').textContent = user?.user_metadata?.username || (user ? '已登录' : '访客');
   $('loginBtn').textContent = user ? '退出登录' : '登录';
 }
 function showGate(message) { $('gate').hidden = false; notice(message || '登录后才能立碑、献花或留言。'); }
@@ -116,26 +116,25 @@ async function createMemorial(event) {
   finally { button.disabled = false; }
 }
 function credentials() {
-  const email = $('email').value.trim();
+  const username = $('username').value.trim();
   const password = $('password').value;
-  if (!email || !email.includes('@')) { notice('请输入有效的邮箱地址。'); return null; }
+  if (username.length < 3 || username.length > 24) { notice('账号需要是 3–24 个字符。'); return null; }
   if (password.length < 6) { notice('密码至少需要 6 位。'); return null; }
-  return { email, password };
+  // Supabase stores its password accounts as email identities. This deterministic internal address
+  // lets visitors use an account name without ever entering or receiving an email address.
+  const token = Array.from(new TextEncoder().encode(username.toLowerCase())).map(byte => byte.toString(16).padStart(2, '0')).join('');
+  return { email: `user-${token}@goodbyetothefuture.app`, password, username };
 }
 async function signInWithPassword() {
   const input = credentials(); if (!input) return;
-  const { error } = await db.auth.signInWithPassword(input);
+  const { error } = await db.auth.signInWithPassword({ email: input.email, password: input.password });
   notice(error ? `登录失败：${error.message}` : '登录成功。');
 }
 async function registerWithPassword() {
   const input = credentials(); if (!input) return;
-  const { data, error } = await db.auth.signUp({ ...input, options:{ emailRedirectTo:siteURL() } });
+  const { data, error } = await db.auth.signUp({ email: input.email, password: input.password, options:{ data:{ username:input.username } } });
   if (error) return notice(`注册失败：${error.message}`);
   notice(data.session ? '账号已创建并登录。' : '账号已创建，请到邮箱确认后再登录。');
-}
-async function signInGitHub() {
-  const { error } = await db.auth.signInWithOAuth({ provider:'github', options:{ redirectTo:siteURL() } });
-  if (error) notice(`GitHub 登录未启动：${error.message}`);
 }
 async function initAuth() {
   const { data } = await db.auth.getSession(); user = data.session?.user || null;
@@ -150,7 +149,7 @@ function addStyleOptions() {
 }
 function wireUI() {
   $('guest').onclick = () => { $('gate').hidden = true; };
-  $('emailLogin').onclick = signInWithPassword; $('emailRegister').onclick = registerWithPassword; $('githubLogin').onclick = signInGitHub;
+  $('emailLogin').onclick = signInWithPassword; $('emailRegister').onclick = registerWithPassword;
   $('loginBtn').onclick = async () => { if (user) await db.auth.signOut(); else showGate(); };
   document.querySelectorAll('#createBtn,#heroCreate').forEach(button => button.onclick = () => { if (requireLogin()) $('createDialog').showModal(); });
   document.querySelectorAll('[data-close="createDialog"]').forEach(button => button.onclick = () => close('createDialog'));
