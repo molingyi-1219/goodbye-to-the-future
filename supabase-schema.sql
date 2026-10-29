@@ -83,8 +83,8 @@ insert into storage.buckets (id, name, public) values ('memorial-media', 'memori
 create policy "owners upload into own folder" on storage.objects for insert to authenticated
   with check (bucket_id = 'memorial-media' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "owners manage own images" on storage.objects for all to authenticated
-  using (bucket_id = 'memorial-media' and owner_id = auth.uid())
-  with check (bucket_id = 'memorial-media' and owner_id = auth.uid());
+  using (bucket_id = 'memorial-media' and owner_id = auth.uid()::text)
+  with check (bucket_id = 'memorial-media' and owner_id = auth.uid()::text);
 create policy "read images belonging to public memorials" on storage.objects for select
   using (bucket_id = 'memorial-media' and exists (
     select 1 from public.memorials m
