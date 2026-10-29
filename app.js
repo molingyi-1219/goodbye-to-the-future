@@ -4,8 +4,8 @@ const db = window.supabase?.createClient(config.url, config.publishableKey, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 const STYLES = {
-  cross: 'cross-gravestone.png', arch: 'arched-gravestone.png', weathered: 'broken-column.png',
-  obelisk: 'gothic-obelisk.png', abstract: 'abstract-monolith.png', deco: 'art-deco-fan.png'
+  cross: 'cross-gravestone-black.png', arch: 'arched-gravestone-black.png', weathered: 'broken-column-black.png',
+  obelisk: 'gothic-obelisk-black.png', abstract: 'abstract-monolith-black.png', deco: 'art-deco-fan-black.png'
 };
 let user = null, filter = 'all', memorials = [], imageFile = null;
 const $ = id => document.getElementById(id);
