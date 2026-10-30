@@ -8,7 +8,7 @@ const STYLES = {
   cross: 'cross-gravestone-black.png', arch: 'arched-gravestone-black.png', weathered: 'broken-column-black.png',
   obelisk: 'gothic-obelisk-black.png', abstract: 'abstract-monolith-black.png', deco: 'art-deco-fan-black.png'
 };
-let user = null, filter = 'all', memorials = [], imageFile = null, albumFiles = [];
+let user = null, filter = 'all', memorials = [], imageFile = null, musicFile = null, albumFiles = [];
 const TRIBUTES = { flower:['✿','献一束花'], candle:['♢','点一盏灯'], stone:['●','留一块石'], leaf:['❦','放一片叶'] };
 const $ = id => document.getElementById(id);
 const escapeHTML = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -25,12 +25,15 @@ function updateUserUI() {
 function showGate(message) { $('gate').hidden = false; notice(message || '登录后才能立碑、献花或留言。'); }
 function requireLogin() { if (!user) { showGate('请先登录，才能进行这项操作。'); return false; } return true; }
 function styleURL(item) { return item.image_url || STYLES[item.style] || STYLES.cross; }
+function safeMediaURL(value) { try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) ? url.href : ''; } catch { return ''; } }
 
 async function attachImageURLs(rows) {
   return Promise.all(rows.map(async row => {
-    if (!row.image_path) return row;
-    const { data } = await db.storage.from('memorial-media').createSignedUrl(row.image_path, 60 * 30);
-    return { ...row, image_url: data?.signedUrl || null };
+    const [image, music] = await Promise.all([
+      row.image_path ? db.storage.from('memorial-media').createSignedUrl(row.image_path, 60 * 30) : null,
+      row.music_path ? db.storage.from('memorial-media').createSignedUrl(row.music_path, 60 * 30) : null
+    ]);
+    return { ...row, image_url:image?.data?.signedUrl || null, music_url:music?.data?.signedUrl || null };
   }));
 }
 async function loadMemorials() {
@@ -62,6 +65,11 @@ async function loadMemorials() {
   }));
   render();
   showReminders();
+  openMemorialFromHash();
+}
+function openMemorialFromHash() {
+  const match = location.hash.match(/^#memorial=([\w-]+)$/); if (!match) return;
+  const item = itemFor(match[1]); if (item?.public) openDetail(item.id);
 }
 function render() {
   const list = memorials.filter(item => item.public && (filter === 'all' || item.kind === filter));
@@ -99,6 +107,9 @@ function albumContent(item, isOwner) {
   const photos = item.album.map(photo => `<figure class="album-item"><img src="${photo.image_url || ''}" alt="${escapeHTML(photo.caption || '纪念册照片')}"><figcaption>${escapeHTML(photo.caption || '')}</figcaption></figure>`).join('');
   return `<section class="memory-section"><div class="tribute"><span>纪念册${item.album.length ? ` · ${item.album.length} 张` : ''}</span>${isOwner ? '<button class="flower" id="addAlbum">添加照片</button>' : ''}</div>${photos ? `<div class="album">${photos}</div>` : '<p class="private-note">这里还没有照片。</p>'}</section>`;
 }
+function shareBlock(item) {
+  return `<section class="memory-section share-block"><div class="tribute"><span>把这块碑带给想看见的人</span></div><div class="share-actions"><button class="outline" id="shareMemorial">分享链接</button><button class="outline" id="downloadCard">下载分享卡片</button></div></section>`;
+}
 function openDetail(id) {
   const item = itemFor(id); if (!item) return;
   const isOwner = item.owner === user?.id;
@@ -108,11 +119,15 @@ function openDetail(id) {
   const tributeButtons = Object.entries(TRIBUTES).map(([type,[symbol,label]]) => `<button class="tribute-choice ${mine?.tribute_type === type ? 'chosen' : ''}" data-tribute="${type}">${symbol} ${mine?.tribute_type === type ? '已' + label : label}</button>`).join('');
   const interaction = item.public ? `<section class="memory-section"><div class="tribute"><span>已有 ${item.flowers.length} 份献礼</span>${mine ? '<button class="flower" id="removeTribute">收回献礼</button>' : ''}</div><div class="tribute-choices">${tributeButtons}</div></section><section class="memory-section"><h3>留言</h3><div>${comments}</div><form class="comment-form" id="commentForm"><input required maxlength="180" name="text" placeholder="留下一句话…"><button>发表</button><label class="anonymous"><input type="checkbox" name="anonymous" checked>匿名留言</label></form></section>` : '<p class="private-note">这是私密碑，只有创建者可以查看。</p>';
   const tending = `<section class="memory-section"><div class="tribute"><span>扫墓回访</span>${isOwner ? '<button class="flower" id="tend">回来扫墓</button>' : ''}</div>${visibleVisits.length ? visibleVisits.map(visit => `<div class="comment"><small>${dateText(visit.created_at)}</small><br>${escapeHTML(visit.body)}</div>`).join('') : '<p class="private-note">还没有留下回访记录。</p>'}</section>`;
-  $('detail').innerHTML = `<div class="modal-top"><div><div class="detail-type">${escapeHTML(item.kind)} · ${item.public ? '公开碑' : '私密碑'}</div><h2>${escapeHTML(item.title)}</h2></div><button class="close" id="closeDetail">×</button></div><img class="detail-img" src="${styleURL(item)}" alt=""><p><b>${escapeHTML(item.epitaph)}</b></p><p>${escapeHTML(item.story || '尚未留下更多文字。')}</p>${albumContent(item, isOwner)}${capsuleContent(item, isOwner)}${tending}${interaction}`;
+  const music = safeMediaURL(item.music_url || '');
+  const soundtrack = music ? `<section class="soundtrack"><span>♬ 此碑的背景音乐</span><audio controls preload="metadata" src="${escapeHTML(music)}"></audio></section>` : '';
+  $('detail').innerHTML = `<div class="modal-top"><div><div class="detail-type">${escapeHTML(item.kind)} · ${item.public ? '公开碑' : '私密碑'}</div><h2>${escapeHTML(item.title)}</h2></div><button class="close" id="closeDetail">×</button></div><img class="detail-img" src="${styleURL(item)}" alt=""><p><b>${escapeHTML(item.epitaph)}</b></p><p>${escapeHTML(item.story || '尚未留下更多文字。')}</p>${soundtrack}${albumContent(item, isOwner)}${capsuleContent(item, isOwner)}${tending}${interaction}${item.public ? shareBlock(item) : ''}`;
   $('detailDialog').showModal();
   $('closeDetail').onclick = () => close('detailDialog');
   if (isOwner) { $('tend').onclick = () => openTend(id); $('addCapsule')?.addEventListener('click', () => openCapsule(id)); $('addAlbum')?.addEventListener('click', () => openAlbum(id)); }
   if (!item.public) return;
+  $('shareMemorial')?.addEventListener('click', () => shareMemorial(item));
+  $('downloadCard')?.addEventListener('click', () => downloadShareCard(item));
   document.querySelectorAll('[data-tribute]').forEach(button => button.onclick = () => setTribute(item, button.dataset.tribute));
   $('removeTribute')?.addEventListener('click', () => removeTribute(item));
   document.querySelectorAll('[data-hide-comment]').forEach(button => button.onclick = () => moderateComment(item.id, button.dataset.hideComment));
@@ -124,6 +139,30 @@ function openDetail(id) {
     if (error) return alert(`留言未保存：${error.message}`);
     await loadMemorials(); openDetail(item.id);
   };
+}
+async function shareMemorial(item) {
+  const url = `${siteURL()}#memorial=${item.id}`;
+  const payload = { title:`纪念 · ${item.title}`, text:item.epitaph || `一块献给「${item.title}」的碑。`, url };
+  try {
+    if (navigator.share) await navigator.share(payload);
+    else { await navigator.clipboard.writeText(url); alert('链接已复制，可以分享给朋友。'); }
+  } catch (error) { if (error?.name !== 'AbortError') alert('分享暂未完成，可以尝试下载分享卡片。'); }
+}
+async function downloadShareCard(item) {
+  const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 630;
+  const ctx = canvas.getContext('2d'); const gradient = ctx.createLinearGradient(0,0,1200,630);
+  gradient.addColorStop(0,'#030303'); gradient.addColorStop(.55,'#181818'); gradient.addColorStop(1,'#030303'); ctx.fillStyle = gradient; ctx.fillRect(0,0,1200,630);
+  ctx.strokeStyle = '#777'; ctx.lineWidth = 2; ctx.strokeRect(38,38,1124,554);
+  ctx.fillStyle = '#cfcfc8'; ctx.font = '600 24px Arial'; ctx.fillText('GOODBYE TO THE FUTURE', 80,100);
+  ctx.fillStyle = '#999'; ctx.font = '22px serif'; ctx.fillText(item.kind,80,155);
+  ctx.fillStyle = '#f1f1ed'; ctx.font = '58px serif'; wrapCanvasText(ctx, item.title, 80, 245, 660, 70);
+  ctx.fillStyle = '#c8c8c3'; ctx.font = '30px serif'; wrapCanvasText(ctx, item.epitaph || '尚未留下墓志铭。',80,430,660,42);
+  ctx.fillStyle = '#aaa'; ctx.font = '20px Arial'; ctx.fillText(siteURL(),80,548);
+  try { const image = new Image(); image.crossOrigin = 'anonymous'; image.src = styleURL(item); await new Promise((resolve,reject) => { image.onload=resolve; image.onerror=reject; }); ctx.globalAlpha=.88; ctx.drawImage(image,795,75,300,440); ctx.globalAlpha=1; } catch { ctx.fillStyle='#555'; ctx.fillRect(905,150,90,330); }
+  const link = document.createElement('a'); link.download=`goodbye-${item.title.slice(0,18).replace(/[\\/:*?"<>|]/g,'-')}.png`; link.href=canvas.toDataURL('image/png'); link.click();
+}
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
+  let line='', offset=0; for (const char of String(text)) { const next=line+char; if (ctx.measureText(next).width > maxWidth && line) { ctx.fillText(line,x,y+offset); line=char; offset+=lineHeight; } else line=next; } if (line) ctx.fillText(line,x,y+offset);
 }
 async function setTribute(item, type) {
   if (!requireLogin()) return;
@@ -197,8 +236,15 @@ function showReminders() {
   $('openReminder')?.addEventListener('click', () => openDetail(due[0].id));
 }
 async function uploadImage(file) {
+  return uploadMedia(file, 5, ['image/png','image/jpeg','image/webp']);
+}
+async function uploadMusic(file) {
+  return uploadMedia(file, 12, ['audio/mpeg','audio/ogg','audio/wav','audio/mp4','audio/x-m4a']);
+}
+async function uploadMedia(file, maxMB, allowedTypes) {
   if (!file) return null;
-  if (file.size > 5 * 1024 * 1024) throw new Error('图片请小于 5MB。');
+  if (!allowedTypes.includes(file.type)) throw new Error('请选择支持的文件格式。');
+  if (file.size > maxMB * 1024 * 1024) throw new Error(`文件请小于 ${maxMB}MB。`);
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
   const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
   const { error } = await db.storage.from('memorial-media').upload(path, file, { contentType:file.type, upsert:false });
@@ -209,11 +255,11 @@ async function createMemorial(event) {
   event.preventDefault(); if (!requireLogin()) return;
   const form = event.currentTarget; const data = new FormData(form); const button = form.querySelector('.primary'); button.disabled = true;
   try {
-    const image_path = await uploadImage(imageFile);
+    const [image_path, music_path] = await Promise.all([uploadImage(imageFile), uploadMusic(musicFile)]);
     const anniversary = data.get('anniversary');
-    const { error } = await db.from('memorials').insert({ owner_id:user.id, title:data.get('title').trim(), kind:data.get('kind'), epitaph:data.get('epitaph').trim(), story:data.get('story').trim(), style:data.get('style'), visibility:data.has('public') ? 'public' : 'private', image_path, anniversary_date:anniversary || null, reminder_enabled:!!anniversary && data.has('reminder') });
+    const { error } = await db.from('memorials').insert({ owner_id:user.id, title:data.get('title').trim(), kind:data.get('kind'), epitaph:data.get('epitaph').trim(), story:data.get('story').trim(), style:data.get('style'), visibility:data.has('public') ? 'public' : 'private', image_path, music_path, anniversary_date:anniversary || null, reminder_enabled:!!anniversary && data.has('reminder') });
     if (error) throw error;
-    imageFile = null; form.reset(); close('createDialog'); await loadMemorials();
+    imageFile = null; musicFile = null; form.reset(); close('createDialog'); await loadMemorials();
   } catch (error) { alert(`这块碑没有保存：${error.message}`); }
   finally { button.disabled = false; }
 }
@@ -263,6 +309,7 @@ function wireUI() {
   $('filters').onclick = event => { const button = event.target.closest('[data-kind]'); if (!button) return; filter = button.dataset.kind; document.querySelectorAll('.filter').forEach(x => x.classList.toggle('active', x === button)); render(); };
   $('styles').onclick = event => { const button = event.target.closest('[data-style]'); if (!button) return; document.querySelectorAll('.style').forEach(x => x.classList.toggle('sel', x === button)); document.querySelector('[name="style"]').value = button.dataset.style; };
   $('image').onchange = event => { imageFile = event.target.files[0] || null; };
+  $('music').onchange = event => { musicFile = event.target.files[0] || null; };
   $('createForm').onsubmit = createMemorial;
   document.body.insertAdjacentHTML('beforeend', `<dialog id="tendDialog"><form class="modal form" id="tendForm"><div class="modal-top wide"><h2>回来扫墓</h2><button type="button" class="close" id="closeTend">×</button></div><p class="private-note wide">留下一段回访记录：可以是近况、思念，或一句新的话。</p><label class="wide">今天想留下什么？<textarea required name="body" maxlength="800" placeholder="我又来看你了。"></textarea></label><label class="check wide"><input type="checkbox" name="public" checked>让访客看见这段回访</label><div class="actions wide"><button type="button" class="outline" id="cancelTend">取消</button><button class="primary">留下回访记录</button></div></form></dialog><dialog id="capsuleDialog"><form class="modal form" id="capsuleForm"><div class="modal-top wide"><h2>封存时间胶囊</h2><button type="button" class="close" data-close-capsule>×</button></div><p class="private-note wide">在指定日期前，只有创建者能读到它。</p><label class="wide">想留给未来的一段话<textarea required name="body" maxlength="1600" placeholder="写给未来的自己，或写给此刻。"></textarea></label><label>开启时间<input required type="datetime-local" name="revealAt"></label><label class="check"><input type="checkbox" name="public" checked>开启后向访客公开</label><div class="actions wide"><button type="button" class="outline" data-close-capsule>取消</button><button class="primary">封存</button></div></form></dialog><dialog id="albumDialog"><form class="modal form" id="albumForm"><div class="modal-top wide"><h2>添加到纪念册</h2><button type="button" class="close" data-close-album>×</button></div><label class="wide">照片（一次最多 6 张）<input required type="file" id="albumImages" accept="image/png,image/jpeg,image/webp" multiple></label><label class="wide">照片说明（可选，应用于本次照片）<input name="caption" maxlength="240" placeholder="这一刻，我想记住。"></label><div class="actions wide"><button type="button" class="outline" data-close-album>取消</button><button class="primary">保存到纪念册</button></div></form></dialog>`);
   $('tendForm').onsubmit = event => event.preventDefault();
@@ -272,4 +319,5 @@ function wireUI() {
   $('albumImages').onchange = event => { albumFiles = Array.from(event.target.files || []).slice(0, 6); if (event.target.files.length > 6) alert('一次最多上传 6 张照片。'); };
 }
 addStyleOptions(); wireUI(); initAuth().then(loadMemorials);
+window.addEventListener('hashchange', openMemorialFromHash);
 
