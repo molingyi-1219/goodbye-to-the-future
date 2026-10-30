@@ -1,4 +1,3 @@
-
 /* goodbye to the future — Supabase browser client */
 const config = window.GTF_SUPABASE;
 const db = window.supabase?.createClient(config.url, config.publishableKey, {
@@ -8,7 +7,7 @@ const STYLES = {
   cross: 'cross-gravestone-black.png', arch: 'arched-gravestone-black.png', weathered: 'broken-column-black.png',
   obelisk: 'gothic-obelisk-black.png', abstract: 'abstract-monolith-black.png', deco: 'art-deco-fan-black.png'
 };
-let user = null, filter = 'all', memorials = [], imageFile = null, musicFile = null, albumFiles = [];
+let user = null, filter = 'all', memorials = [], imageFile = null, musicFile = null, musicUpdateFile = null, albumFiles = [];
 const TRIBUTES = { flower:['✿','献一束花'], candle:['♢','点一盏灯'], stone:['●','留一块石'], leaf:['❦','放一片叶'] };
 const $ = id => document.getElementById(id);
 const escapeHTML = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -122,11 +121,11 @@ function openDetail(id) {
   const tending = `<section class="memory-section"><div class="tribute"><span>扫墓回访</span>${isOwner ? '<button class="flower" id="tend">回来扫墓</button>' : ''}</div>${visibleVisits.length ? visibleVisits.map(visit => `<div class="comment"><small>${dateText(visit.created_at)}</small><br>${escapeHTML(visit.body)}</div>`).join('') : '<p class="private-note">还没有留下回访记录。</p>'}</section>`;
   const music = safeMediaURL(item.music_url || '');
   const netease = /^\d+$/.test(String(item.netease_song_id || '')) ? `<iframe class="netease-player" frameborder="0" allow="autoplay" src="https://music.163.com/outchain/player?type=2&id=${item.netease_song_id}&auto=0&height=66"></iframe>` : '';
-  const soundtrack = (music || netease) ? `<section class="soundtrack"><span>♬ 此碑的背景音乐</span>${music ? `<audio controls preload="metadata" src="${escapeHTML(music)}"></audio>` : netease}</section>` : '';
+  const soundtrack = (music || netease || isOwner) ? `<section class="soundtrack"><span>♬ ${music || netease ? '此碑的背景音乐' : '尚未设定背景音乐'}</span>${music ? `<audio controls preload="metadata" src="${escapeHTML(music)}"></audio>` : netease || ''}${isOwner ? '<button class="text-button" id="changeMusic">设置音乐</button>' : ''}</section>` : '';
   $('detail').innerHTML = `<div class="modal-top"><div><div class="detail-type">${escapeHTML(item.kind)} · ${item.public ? '公开碑' : '私密碑'}</div><h2>${escapeHTML(item.title)}</h2></div><button class="close" id="closeDetail">×</button></div><img class="detail-img" src="${styleURL(item)}" alt=""><p><b>${escapeHTML(item.epitaph)}</b></p><p>${escapeHTML(item.story || '尚未留下更多文字。')}</p>${soundtrack}${albumContent(item, isOwner)}${capsuleContent(item, isOwner)}${tending}${interaction}${item.public ? shareBlock(item) : ''}`;
   $('detailDialog').showModal();
   $('closeDetail').onclick = () => close('detailDialog');
-  if (isOwner) { $('tend').onclick = () => openTend(id); $('addCapsule')?.addEventListener('click', () => openCapsule(id)); $('addAlbum')?.addEventListener('click', () => openAlbum(id)); }
+  if (isOwner) { $('tend').onclick = () => openTend(id); $('addCapsule')?.addEventListener('click', () => openCapsule(id)); $('addAlbum')?.addEventListener('click', () => openAlbum(id)); $('changeMusic')?.addEventListener('click', () => openMusicSettings(id)); }
   if (!item.public) return;
   $('shareMemorial')?.addEventListener('click', () => shareMemorial(item));
   $('downloadCard')?.addEventListener('click', () => downloadShareCard(item));
@@ -230,6 +229,25 @@ async function saveAlbum(event) {
   } catch (error) { alert(`纪念册未保存：${error.message}`); }
   finally { button.disabled = false; }
 }
+function openMusicSettings(id) {
+  const item = itemFor(id); if (!item || item.owner !== user?.id) return;
+  musicUpdateFile = null; $('musicSettingsForm').dataset.memorialId = id; $('musicSettingsDialog').showModal();
+}
+async function saveMusicSettings(event) {
+  event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const remove = data.get('remove') === 'on';
+  try {
+    let music_path = null, netease_song_id = null;
+    if (!remove) {
+      music_path = await uploadMusic(musicUpdateFile);
+      netease_song_id = music_path ? null : neteaseSongId(data.get('netease'));
+      if (!music_path && !netease_song_id) return alert('请上传音频，或填入网易云歌曲链接 / ID；也可以选择移除。');
+      if (data.get('netease')?.trim() && !netease_song_id && !music_path) return alert('网易云链接无法识别。');
+    }
+    const { error } = await db.from('memorials').update({ music_path, netease_song_id }).eq('id', form.dataset.memorialId).eq('owner_id', user.id);
+    if (error) throw error;
+    const id = form.dataset.memorialId; form.reset(); close('musicSettingsDialog'); await loadMemorials(); openDetail(id);
+  } catch (error) { alert(`音乐未保存：${error.message}`); }
+}
 function showReminders() {
   if (!user) return;
   const today = new Date(); const month = today.getMonth() + 1, day = today.getDate();
@@ -319,11 +337,13 @@ function wireUI() {
   $('image').onchange = event => { imageFile = event.target.files[0] || null; };
   $('music').onchange = event => { musicFile = event.target.files[0] || null; };
   $('createForm').onsubmit = createMemorial;
-  document.body.insertAdjacentHTML('beforeend', `<dialog id="tendDialog"><form class="modal form" id="tendForm"><div class="modal-top wide"><h2>回来扫墓</h2><button type="button" class="close" id="closeTend">×</button></div><p class="private-note wide">留下一段回访记录：可以是近况、思念，或一句新的话。</p><label class="wide">今天想留下什么？<textarea required name="body" maxlength="800" placeholder="我又来看你了。"></textarea></label><label class="check wide"><input type="checkbox" name="public" checked>让访客看见这段回访</label><div class="actions wide"><button type="button" class="outline" id="cancelTend">取消</button><button class="primary">留下回访记录</button></div></form></dialog><dialog id="capsuleDialog"><form class="modal form" id="capsuleForm"><div class="modal-top wide"><h2>封存时间胶囊</h2><button type="button" class="close" data-close-capsule>×</button></div><p class="private-note wide">在指定日期前，只有创建者能读到它。</p><label class="wide">想留给未来的一段话<textarea required name="body" maxlength="1600" placeholder="写给未来的自己，或写给此刻。"></textarea></label><label>开启时间<input required type="datetime-local" name="revealAt"></label><label class="check"><input type="checkbox" name="public" checked>开启后向访客公开</label><div class="actions wide"><button type="button" class="outline" data-close-capsule>取消</button><button class="primary">封存</button></div></form></dialog><dialog id="albumDialog"><form class="modal form" id="albumForm"><div class="modal-top wide"><h2>添加到纪念册</h2><button type="button" class="close" data-close-album>×</button></div><label class="wide">照片（一次最多 6 张）<input required type="file" id="albumImages" accept="image/png,image/jpeg,image/webp" multiple></label><label class="wide">照片说明（可选，应用于本次照片）<input name="caption" maxlength="240" placeholder="这一刻，我想记住。"></label><div class="actions wide"><button type="button" class="outline" data-close-album>取消</button><button class="primary">保存到纪念册</button></div></form></dialog>`);
+  document.body.insertAdjacentHTML('beforeend', `<dialog id="tendDialog"><form class="modal form" id="tendForm"><div class="modal-top wide"><h2>回来扫墓</h2><button type="button" class="close" id="closeTend">×</button></div><p class="private-note wide">留下一段回访记录：可以是近况、思念，或一句新的话。</p><label class="wide">今天想留下什么？<textarea required name="body" maxlength="800" placeholder="我又来看你了。"></textarea></label><label class="check wide"><input type="checkbox" name="public" checked>让访客看见这段回访</label><div class="actions wide"><button type="button" class="outline" id="cancelTend">取消</button><button class="primary">留下回访记录</button></div></form></dialog><dialog id="capsuleDialog"><form class="modal form" id="capsuleForm"><div class="modal-top wide"><h2>封存时间胶囊</h2><button type="button" class="close" data-close-capsule>×</button></div><p class="private-note wide">在指定日期前，只有创建者能读到它。</p><label class="wide">想留给未来的一段话<textarea required name="body" maxlength="1600" placeholder="写给未来的自己，或写给此刻。"></textarea></label><label>开启时间<input required type="datetime-local" name="revealAt"></label><label class="check"><input type="checkbox" name="public" checked>开启后向访客公开</label><div class="actions wide"><button type="button" class="outline" data-close-capsule>取消</button><button class="primary">封存</button></div></form></dialog><dialog id="albumDialog"><form class="modal form" id="albumForm"><div class="modal-top wide"><h2>添加到纪念册</h2><button type="button" class="close" data-close-album>×</button></div><label class="wide">照片（一次最多 6 张）<input required type="file" id="albumImages" accept="image/png,image/jpeg,image/webp" multiple></label><label class="wide">照片说明（可选，应用于本次照片）<input name="caption" maxlength="240" placeholder="这一刻，我想记住。"></label><div class="actions wide"><button type="button" class="outline" data-close-album>取消</button><button class="primary">保存到纪念册</button></div></form></dialog><dialog id="musicSettingsDialog"><form class="modal form" id="musicSettingsForm"><div class="modal-top wide"><h2>设置背景音乐</h2><button type="button" class="close" data-close-music>×</button></div><label class="wide">上传音频（MP3 / OGG / WAV，小于 12MB）<input type="file" id="musicSettingsFile" accept="audio/mpeg,audio/ogg,audio/wav,audio/mp4,audio/x-m4a"></label><label class="wide">或填网易云歌曲链接 / ID<input name="netease" placeholder="https://music.163.com/song?id=…"></label><label class="check wide"><input type="checkbox" name="remove">移除目前的背景音乐</label><div class="actions wide"><button type="button" class="outline" data-close-music>取消</button><button class="primary">保存音乐</button></div></form></dialog>`);
   $('tendForm').onsubmit = event => event.preventDefault();
   $('capsuleForm').onsubmit = saveCapsule; $('albumForm').onsubmit = saveAlbum;
+  $('musicSettingsForm').onsubmit = saveMusicSettings; $('musicSettingsFile').onchange = event => { musicUpdateFile = event.target.files[0] || null; };
   document.querySelectorAll('[data-close-capsule]').forEach(button => button.onclick = () => close('capsuleDialog'));
   document.querySelectorAll('[data-close-album]').forEach(button => button.onclick = () => close('albumDialog'));
+  document.querySelectorAll('[data-close-music]').forEach(button => button.onclick = () => close('musicSettingsDialog'));
   $('albumImages').onchange = event => { albumFiles = Array.from(event.target.files || []).slice(0, 6); if (event.target.files.length > 6) alert('一次最多上传 6 张照片。'); };
 }
 addStyleOptions(); wireUI(); initAuth().then(loadMemorials);
