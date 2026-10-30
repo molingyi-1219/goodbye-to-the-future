@@ -1,4 +1,3 @@
-
 /* goodbye to the future — Supabase browser client */
 const config = window.GTF_SUPABASE;
 const db = window.supabase?.createClient(config.url, config.publishableKey, {
@@ -257,7 +256,11 @@ async function createMemorial(event) {
   try {
     const [image_path, music_path] = await Promise.all([uploadImage(imageFile), uploadMusic(musicFile)]);
     const anniversary = data.get('anniversary');
-    const { error } = await db.from('memorials').insert({ owner_id:user.id, title:data.get('title').trim(), kind:data.get('kind'), epitaph:data.get('epitaph').trim(), story:data.get('story').trim(), style:data.get('style'), visibility:data.has('public') ? 'public' : 'private', image_path, music_path, anniversary_date:anniversary || null, reminder_enabled:!!anniversary && data.has('reminder') });
+    const payload = { owner_id:user.id, title:data.get('title').trim(), kind:data.get('kind'), epitaph:data.get('epitaph').trim(), story:data.get('story').trim(), style:data.get('style'), visibility:data.has('public') ? 'public' : 'private', image_path, music_path, anniversary_date:anniversary || null, reminder_enabled:!!anniversary && data.has('reminder') };
+    let { error } = await db.from('memorials').insert(payload);
+    // Keep ordinary memorial creation available if the SQL migration has not been run yet.
+    if (error?.code === 'PGRST204' && !music_path) ({ error } = await db.from('memorials').insert(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'music_path'))));
+    if (error?.code === 'PGRST204' && music_path) throw new Error('背景音乐功能正在完成数据库更新，请稍后重试。');
     if (error) throw error;
     imageFile = null; musicFile = null; form.reset(); close('createDialog'); await loadMemorials();
   } catch (error) { alert(`这块碑没有保存：${error.message}`); }
