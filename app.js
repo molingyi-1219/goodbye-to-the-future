@@ -1,3 +1,4 @@
+
 /* goodbye to the future — Supabase browser client */
 const config = window.GTF_SUPABASE;
 const db = window.supabase?.createClient(config.url, config.publishableKey, {
@@ -25,6 +26,7 @@ function showGate(message) { $('gate').hidden = false; notice(message || '登录
 function requireLogin() { if (!user) { showGate('请先登录，才能进行这项操作。'); return false; } return true; }
 function styleURL(item) { return item.image_url || STYLES[item.style] || STYLES.cross; }
 function safeMediaURL(value) { try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) ? url.href : ''; } catch { return ''; } }
+function neteaseSongId(value) { const match = String(value || '').match(/[?&]id=(\d+)/); return match?.[1] || (/^\d+$/.test(String(value || '').trim()) ? String(value).trim() : null); }
 
 async function attachImageURLs(rows) {
   return Promise.all(rows.map(async row => {
@@ -119,7 +121,8 @@ function openDetail(id) {
   const interaction = item.public ? `<section class="memory-section"><div class="tribute"><span>已有 ${item.flowers.length} 份献礼</span>${mine ? '<button class="flower" id="removeTribute">收回献礼</button>' : ''}</div><div class="tribute-choices">${tributeButtons}</div></section><section class="memory-section"><h3>留言</h3><div>${comments}</div><form class="comment-form" id="commentForm"><input required maxlength="180" name="text" placeholder="留下一句话…"><button>发表</button><label class="anonymous"><input type="checkbox" name="anonymous" checked>匿名留言</label></form></section>` : '<p class="private-note">这是私密碑，只有创建者可以查看。</p>';
   const tending = `<section class="memory-section"><div class="tribute"><span>扫墓回访</span>${isOwner ? '<button class="flower" id="tend">回来扫墓</button>' : ''}</div>${visibleVisits.length ? visibleVisits.map(visit => `<div class="comment"><small>${dateText(visit.created_at)}</small><br>${escapeHTML(visit.body)}</div>`).join('') : '<p class="private-note">还没有留下回访记录。</p>'}</section>`;
   const music = safeMediaURL(item.music_url || '');
-  const soundtrack = music ? `<section class="soundtrack"><span>♬ 此碑的背景音乐</span><audio controls preload="metadata" src="${escapeHTML(music)}"></audio></section>` : '';
+  const netease = /^\d+$/.test(String(item.netease_song_id || '')) ? `<iframe class="netease-player" frameborder="0" allow="autoplay" src="https://music.163.com/outchain/player?type=2&id=${item.netease_song_id}&auto=0&height=66"></iframe>` : '';
+  const soundtrack = (music || netease) ? `<section class="soundtrack"><span>♬ 此碑的背景音乐</span>${music ? `<audio controls preload="metadata" src="${escapeHTML(music)}"></audio>` : netease}</section>` : '';
   $('detail').innerHTML = `<div class="modal-top"><div><div class="detail-type">${escapeHTML(item.kind)} · ${item.public ? '公开碑' : '私密碑'}</div><h2>${escapeHTML(item.title)}</h2></div><button class="close" id="closeDetail">×</button></div><img class="detail-img" src="${styleURL(item)}" alt=""><p><b>${escapeHTML(item.epitaph)}</b></p><p>${escapeHTML(item.story || '尚未留下更多文字。')}</p>${soundtrack}${albumContent(item, isOwner)}${capsuleContent(item, isOwner)}${tending}${interaction}${item.public ? shareBlock(item) : ''}`;
   $('detailDialog').showModal();
   $('closeDetail').onclick = () => close('detailDialog');
@@ -255,11 +258,13 @@ async function createMemorial(event) {
   const form = event.currentTarget; const data = new FormData(form); const button = form.querySelector('.primary'); button.disabled = true;
   try {
     const [image_path, music_path] = await Promise.all([uploadImage(imageFile), uploadMusic(musicFile)]);
+    const netease_song_id = music_path ? null : neteaseSongId(data.get('netease'));
+    if (data.get('netease')?.trim() && !netease_song_id) throw new Error('网易云链接无法识别，请粘贴歌曲页面链接或歌曲 ID。');
     const anniversary = data.get('anniversary');
-    const payload = { owner_id:user.id, title:data.get('title').trim(), kind:data.get('kind'), epitaph:data.get('epitaph').trim(), story:data.get('story').trim(), style:data.get('style'), visibility:data.has('public') ? 'public' : 'private', image_path, music_path, anniversary_date:anniversary || null, reminder_enabled:!!anniversary && data.has('reminder') };
+    const payload = { owner_id:user.id, title:data.get('title').trim(), kind:data.get('kind'), epitaph:data.get('epitaph').trim(), story:data.get('story').trim(), style:data.get('style'), visibility:data.has('public') ? 'public' : 'private', image_path, music_path, netease_song_id, anniversary_date:anniversary || null, reminder_enabled:!!anniversary && data.has('reminder') };
     let { error } = await db.from('memorials').insert(payload);
     // Keep ordinary memorial creation available if the SQL migration has not been run yet.
-    if (error?.code === 'PGRST204' && !music_path) ({ error } = await db.from('memorials').insert(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'music_path'))));
+    if (error?.code === 'PGRST204' && !music_path && !netease_song_id) ({ error } = await db.from('memorials').insert(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'music_path' && key !== 'netease_song_id'))));
     if (error?.code === 'PGRST204' && music_path) throw new Error('背景音乐功能正在完成数据库更新，请稍后重试。');
     if (error) throw error;
     imageFile = null; musicFile = null; form.reset(); close('createDialog'); await loadMemorials();
